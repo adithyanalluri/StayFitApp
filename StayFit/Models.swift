@@ -57,12 +57,16 @@ struct Workout: Identifiable, Codable, Hashable {
     var date: Date
     var exercises: [ExerciseLog]
     var completed: Bool
+    var notes: String = ""
+    var rating: Int? = nil
 
-    init(id: UUID = UUID(), date: Date = Date(), exercises: [ExerciseLog] = [], completed: Bool = false) {
+    init(id: UUID = UUID(), date: Date = Date(), exercises: [ExerciseLog] = [], completed: Bool = false, notes: String = "", rating: Int? = nil) {
         self.id = id
         self.date = date
         self.exercises = exercises
         self.completed = completed
+        self.notes = notes
+        self.rating = rating
     }
 }
 

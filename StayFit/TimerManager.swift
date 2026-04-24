@@ -1,7 +1,6 @@
 import Foundation
 import Combine
 import UserNotifications
-import AVFoundation
 import UIKit
 import AudioToolbox
 
@@ -27,7 +26,6 @@ final class TimerManager: ObservableObject {
     // Internals
     private var timer: Timer?
     private let notificationID = "stayfit.restTimer"
-    private var audioPlayer: AVAudioPlayer?
 
     // MARK: - Init
     init() {
@@ -52,6 +50,7 @@ final class TimerManager: ObservableObject {
         remaining = secs
         isPaused = false
         isVisible = true
+        updateWidgetTimerRemaining()
         tickStart()
         scheduleNotification()
     }
@@ -59,6 +58,7 @@ final class TimerManager: ObservableObject {
     func pause() {
         guard isVisible, !isPaused else { return }
         isPaused = true
+        updateWidgetTimerRemaining()
         invalidate()
         removeScheduledNotification()
     }
@@ -66,6 +66,7 @@ final class TimerManager: ObservableObject {
     func resume() {
         guard isVisible, isPaused, remaining > 0 else { return }
         isPaused = false
+        updateWidgetTimerRemaining()
         tickStart()
         scheduleNotification()
     }
@@ -77,6 +78,7 @@ final class TimerManager: ObservableObject {
         total = 0
         isPaused = false
         isVisible = false
+        updateWidgetTimerRemaining()
     }
 
     /// Quick +/- seconds from the pill.
@@ -84,6 +86,7 @@ final class TimerManager: ObservableObject {
         guard isVisible else { return }
         remaining = max(0, min(remaining + delta, 300))
         total = max(total, remaining)
+        updateWidgetTimerRemaining()
         if !isPaused { tickStart() }
         scheduleNotification()
     }
@@ -119,12 +122,14 @@ final class TimerManager: ObservableObject {
         if [3, 2, 1].contains(remaining) { tickHaptic(for: remaining) }
 
         remaining -= 1
+        updateWidgetTimerRemaining()
         if remaining <= 0 {
             end()
         }
     }
 
     private func end() {
+        // Order: haptic, then sound, then UI changes
         invalidate()
         removeScheduledNotification()
         haptic()                 // big buzz at 0
@@ -133,11 +138,20 @@ final class TimerManager: ObservableObject {
         remaining = 0
         total = 0
         isPaused = false
+        updateWidgetTimerRemaining()
     }
 
     private func invalidate() {
         timer?.invalidate()
         timer = nil
+    }
+
+    // MARK: - Widget sync (App Group defaults)
+    private func updateWidgetTimerRemaining() {
+        if let defaults = UserDefaults(suiteName: "group.com.yourcompany.stayfit") {
+            defaults.set(max(remaining, 0), forKey: "widget_timer_remaining")
+            defaults.synchronize()
+        }
     }
 
     // MARK: - Haptics
@@ -174,25 +188,8 @@ final class TimerManager: ObservableObject {
 
     // MARK: - Sound with music ducking
     private func playSoundWithDucking() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, options: [.duckOthers, .mixWithOthers])
-            try session.setActive(true)
-
-            if let url = Bundle.main.url(forResource: "ding", withExtension: "caf") {
-                audioPlayer = try AVAudioPlayer(contentsOf: url)
-                audioPlayer?.prepareToPlay()
-                audioPlayer?.play()
-            } else {
-                AudioServicesPlaySystemSound(1005) // fallback if asset missing
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-            }
-        } catch {
-            AudioServicesPlaySystemSound(1005)
-        }
+        // Simplified for v1: use system sound only; no custom bundle asset.
+        AudioServicesPlaySystemSound(1005)
     }
 
     // MARK: - Persist default rest (local only)

@@ -9,6 +9,8 @@ struct FinishSummaryView: View {
 
     // Your log type
     let workout: Workout
+    
+    @State private var rating: Int = 0
 
     // MARK: - Computed summaries
 
@@ -77,6 +79,22 @@ struct FinishSummaryView: View {
                         Text(totalVolumeDisplay).monospacedDigit()
                     }
                 }
+                
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("How would you rate this workout?")
+                            .font(.headline)
+                        HStack(spacing: 10) {
+                            ForEach(1...5, id: \.self) { star in
+                                Image(systemName: rating >= star ? "star.fill" : "star")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(rating >= star ? .yellow : .gray)
+                                    .onTapGesture { rating = star }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
 
                 Section("Highlights") {
                     ForEach(rows) { r in
@@ -144,6 +162,9 @@ struct FinishSummaryView: View {
 
     /// Hand off to DataStore so it can mark complete and persist internally.
     private func saveFinishedWorkout() {
-        store.saveCompleted(workout)
+        var ratedWorkout = workout
+        ratedWorkout.rating = rating
+        store.saveCompleted(ratedWorkout)
     }
 }
+

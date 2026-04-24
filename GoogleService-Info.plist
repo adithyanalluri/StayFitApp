@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>364383089949-f47jl4q9o0q6sff8iu21j8i9mofjedjt.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.364383089949-f47jl4q9o0q6sff8iu21j8i9mofjedjt</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAGRVeVleF2fOdgr7nPlaLZM1IWML299RM</string>
+	<key>GCM_SENDER_ID</key>
+	<string>364383089949</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>adithyanalluri.StayFit</string>
+	<key>PROJECT_ID</key>
+	<string>stayfit-2852c</string>
+	<key>STORAGE_BUCKET</key>
+	<string>stayfit-2852c.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:364383089949:ios:527f37b9b124defcac5df4</string>
+</dict>
+</plist>

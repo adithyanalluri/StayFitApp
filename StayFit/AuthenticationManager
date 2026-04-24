@@ -1,0 +1,382 @@
+
+import Foundation
+import SwiftUI
+import AuthenticationServices
+import LocalAuthentication
+import FirebaseCore
+import FirebaseAuth
+
+// MARK: - User Model
+struct User: Codable, Identifiable {
+    let id: String
+    var email: String
+    var name: String
+    var photoURL: String?
+    var provider: AuthProvider
+    
+    enum AuthProvider: String, Codable {
+        case apple, google, email
+    }
+}
+
+// MARK: - Firebase Authentication Manager
+@MainActor
+final class AuthenticationManager: ObservableObject {
+    static let shared = AuthenticationManager()
+    
+    @Published var currentUser: User?
+    @Published var isAuthenticated = false
+    @Published var isLoading = true
+    @Published var authError: AuthError?
+    
+    private let keychain = KeychainManager.shared
+    private let biometricAuth = BiometricAuthManager()
+    
+    // MARK: - Init
+    private init() {
+        // Configure Firebase
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+        
+        Task {
+            await checkAuthStatus()
+        }
+    }
+    
+    // MARK: - Check Auth Status
+    func checkAuthStatus() async {
+        isLoading = true
+        
+        // Check if Firebase user is signed in
+        if let firebaseUser = Auth.auth().currentUser {
+            // Create our User model from Firebase user
+            let user = User(
+                id: firebaseUser.uid,
+                email: firebaseUser.email ?? "",
+                name: firebaseUser.displayName ?? "User",
+                photoURL: firebaseUser.photoURL?.absoluteString,
+                provider: determineProvider(from: firebaseUser)
+            )
+            
+            self.currentUser = user
+            self.isAuthenticated = true
+            
+            // Save to keychain for quick access
+            keychain.saveUserData(user)
+        } else {
+            // No Firebase user, clear everything
+            self.currentUser = nil
+            self.isAuthenticated = false
+            keychain.deleteUserData()
+        }
+        
+        isLoading = false
+    }
+    
+    private func determineProvider(from firebaseUser: FirebaseAuth.User) -> User.AuthProvider {
+        if let providerData = firebaseUser.providerData.first {
+            switch providerData.providerID {
+            case "apple.com":
+                return .apple
+            case "google.com":
+                return .google
+            default:
+                return .email
+            }
+        }
+        return .email
+    }
+    
+    // MARK: - Email Authentication
+    func signInWithEmail(email: String, password: String) async throws {
+        isLoading = true
+        authError = nil
+        
+        do {
+            let result = try await Auth.auth().signIn(withEmail: email, password: password)
+            
+            let user = User(
+                id: result.user.uid,
+                email: result.user.email ?? email,
+                name: result.user.displayName ?? email.components(separatedBy: "@").first ?? "User",
+                photoURL: result.user.photoURL?.absoluteString,
+                provider: .email
+            )
+            
+            keychain.saveUserData(user)
+            self.currentUser = user
+            self.isAuthenticated = true
+            
+            isLoading = false
+        } catch let error as NSError {
+            isLoading = false
+            authError = .signInFailed(error.localizedDescription)
+            throw error
+        }
+    }
+    
+    func signUpWithEmail(name: String, email: String, password: String) async throws {
+        isLoading = true
+        authError = nil
+        
+        do {
+            let result = try await Auth.auth().createUser(withEmail: email, password: password)
+            
+            // Update display name
+            let changeRequest = result.user.createProfileChangeRequest()
+            changeRequest.displayName = name
+            try await changeRequest.commitChanges()
+            
+            let user = User(
+                id: result.user.uid,
+                email: email,
+                name: name,
+                photoURL: nil,
+                provider: .email
+            )
+            
+            keychain.saveUserData(user)
+            self.currentUser = user
+            self.isAuthenticated = true
+            
+            // Prompt for biometric auth after successful signup
+            if biometricAuth.canUseBiometrics() {
+                try? await enableBiometricAuth()
+            }
+            
+            isLoading = false
+        } catch let error as NSError {
+            isLoading = false
+            authError = .signUpFailed(error.localizedDescription)
+            throw error
+        }
+    }
+    
+    // MARK: - Apple Sign In
+    func signInWithApple(_ authorization: ASAuthorization) async throws {
+        isLoading = true
+        authError = nil
+        
+        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            authError = .invalidCredentials
+            isLoading = false
+            throw AuthError.invalidCredentials
+        }
+        
+        guard let identityToken = appleIDCredential.identityToken,
+              let tokenString = String(data: identityToken, encoding: .utf8) else {
+            authError = .invalidToken
+            isLoading = false
+            throw AuthError.invalidToken
+        }
+        
+        do {
+            let credential = OAuthProvider.credential(
+                withProviderID: "apple.com",
+                idToken: tokenString,
+                rawNonce: nil
+            )
+            
+            let result = try await Auth.auth().signIn(with: credential)
+            
+            // Get name from Apple ID credential
+            var displayName = result.user.displayName
+            if displayName == nil || displayName!.isEmpty {
+                let givenName = appleIDCredential.fullName?.givenName ?? ""
+                let familyName = appleIDCredential.fullName?.familyName ?? ""
+                displayName = "\(givenName) \(familyName)".trimmingCharacters(in: .whitespaces)
+                
+                if !displayName!.isEmpty {
+                    let changeRequest = result.user.createProfileChangeRequest()
+                    changeRequest.displayName = displayName
+                    try? await changeRequest.commitChanges()
+                }
+            }
+            
+            let user = User(
+                id: result.user.uid,
+                email: result.user.email ?? appleIDCredential.email ?? "user@apple.com",
+                name: displayName?.isEmpty == false ? displayName! : "Apple User",
+                photoURL: result.user.photoURL?.absoluteString,
+                provider: .apple
+            )
+            
+            keychain.saveUserData(user)
+            self.currentUser = user
+            self.isAuthenticated = true
+            
+            isLoading = false
+        } catch let error as NSError {
+            isLoading = false
+            authError = .appleSignInFailed(error.localizedDescription)
+            throw error
+        }
+    }
+    
+    // MARK: - Google Sign In
+    func signInWithGoogle() async throws {
+        // Note: Google Sign In requires additional setup
+        // For now, throw not implemented
+        authError = .notImplemented
+        throw AuthError.notImplemented
+    }
+    
+    // MARK: - Biometric Auth
+    func enableBiometricAuth() async throws -> Bool {
+        guard isAuthenticated else { return false }
+        
+        let success = try await biometricAuth.authenticate(reason: "Enable biometric login")
+        if success {
+            UserDefaults.standard.set(true, forKey: "biometricAuthEnabled")
+        }
+        return success
+    }
+    
+    func signInWithBiometrics() async throws {
+        guard UserDefaults.standard.bool(forKey: "biometricAuthEnabled") else {
+            throw AuthError.biometricsNotEnabled
+        }
+        
+        let success = try await biometricAuth.authenticate(reason: "Sign in to StayFit")
+        
+        if success {
+            await checkAuthStatus()
+        } else {
+            throw AuthError.biometricsFailed
+        }
+    }
+    
+    // MARK: - Password Reset
+    func resetPassword(email: String) async throws {
+        do {
+            try await Auth.auth().sendPasswordReset(withEmail: email)
+        } catch let error as NSError {
+            authError = .passwordResetFailed(error.localizedDescription)
+            throw error
+        }
+    }
+    
+    // MARK: - Sign Out
+    func signOut() async {
+        do {
+            try Auth.auth().signOut()
+            
+            keychain.deleteUserData()
+            
+            self.currentUser = nil
+            self.isAuthenticated = false
+            self.authError = nil
+        } catch {
+            print("Sign out error: \(error)")
+        }
+    }
+}
+
+// MARK: - Auth Error
+enum AuthError: LocalizedError, Identifiable {
+    case signInFailed(String)
+    case signUpFailed(String)
+    case invalidCredentials
+    case invalidToken
+    case appleSignInFailed(String)
+    case googleSignInFailed(String)
+    case biometricsNotEnabled
+    case biometricsFailed
+    case passwordResetFailed(String)
+    case notImplemented
+    
+    var id: String { errorDescription ?? "unknown" }
+    
+    var errorDescription: String? {
+        switch self {
+        case .signInFailed(let message):
+            return "Sign in failed: \(message)"
+        case .signUpFailed(let message):
+            return "Sign up failed: \(message)"
+        case .invalidCredentials:
+            return "Invalid credentials provided"
+        case .invalidToken:
+            return "Invalid authentication token"
+        case .appleSignInFailed(let message):
+            return "Apple Sign In failed: \(message)"
+        case .googleSignInFailed(let message):
+            return "Google Sign In failed: \(message)"
+        case .biometricsNotEnabled:
+            return "Biometric authentication is not enabled"
+        case .biometricsFailed:
+            return "Biometric authentication failed"
+        case .passwordResetFailed(let message):
+            return "Password reset failed: \(message)"
+        case .notImplemented:
+            return "This feature is not yet implemented"
+        }
+    }
+}
+
+// MARK: - Keychain Manager
+final class KeychainManager {
+    static let shared = KeychainManager()
+    private init() {}
+    
+    private let userDataKey = "com.stayfit.userData"
+    
+    func saveUserData(_ user: User) {
+        guard let data = try? JSONEncoder().encode(user) else { return }
+        UserDefaults.standard.set(data, forKey: userDataKey)
+    }
+    
+    func getUserData() -> User? {
+        guard let data = UserDefaults.standard.data(forKey: userDataKey),
+              let user = try? JSONDecoder().decode(User.self, from: data) else {
+            return nil
+        }
+        return user
+    }
+    
+    func deleteUserData() {
+        UserDefaults.standard.removeObject(forKey: userDataKey)
+    }
+}
+
+// MARK: - Biometric Auth Manager
+final class BiometricAuthManager {
+    private let context = LAContext()
+    
+    func canUseBiometrics() -> Bool {
+        var error: NSError?
+        return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+    
+    func biometricType() -> String {
+        guard canUseBiometrics() else { return "None" }
+        
+        switch context.biometryType {
+        case .faceID:
+            return "Face ID"
+        case .touchID:
+            return "Touch ID"
+        default:
+            return "Biometrics"
+        }
+    }
+    
+    func authenticate(reason: String) async throws -> Bool {
+        guard canUseBiometrics() else {
+            throw AuthError.biometricsNotEnabled
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: reason
+            ) { success, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: success)
+                }
+            }
+        }
+    }
+}

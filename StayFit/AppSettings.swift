@@ -3,7 +3,12 @@ import Foundation
 enum UnitSystem: String, Codable, CaseIterable, Identifiable {
     case kg, lb
     var id: String { rawValue }
-    var label: String { rawValue.uppercased() }
+    var label: String {
+        switch self {
+        case .kg: return "KG"
+        case .lb: return "LBS"
+        }
+    }
 }
 
 // Codable payload we write/read to disk
@@ -14,7 +19,7 @@ private struct SettingsData: Codable {
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    @Published var unit: UnitSystem = .kg
+    @Published var unit: UnitSystem = .lb  // Default to pounds
     @Published var defaultRestSeconds: Int = 120   // 2 minutes default
 
     // MARK: - Persistence
@@ -52,4 +57,3 @@ final class SettingsStore: ObservableObject {
         unit == .kg ? value : value / 2.2046226218
     }
 }
-

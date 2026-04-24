@@ -117,21 +117,7 @@ struct HomeView: View {
 #Preview {
     let store = DataStore()
     let settings = SettingsStore()
-    let timer = TimerManager()
-
-    // Seed one example template for the preview
-    store.templates = [
-        WorkoutTemplate(
-            name: "Push A",
-            exercises: [
-                ExerciseTemplate(name: "Incline Bench Press"),
-                ExerciseTemplate(name: "Shoulder Press")
-            ]
-        )
-    ]
-
-    return HomeView()
+    HomeView()
         .environmentObject(store)
         .environmentObject(settings)
-        .environmentObject(timer)
 }
