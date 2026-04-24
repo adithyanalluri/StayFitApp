@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import AuthenticationServices
 import LocalAuthentication
+import GoogleSignIn
+import FirebaseCore
 
 // MARK: - User Model
 struct User: Codable, Identifiable {
@@ -155,23 +157,35 @@ final class AuthenticationManager: ObservableObject {
     func signInWithGoogle() async throws {
         isLoading = true
         authError = nil
-        
+
         do {
-            // Google Sign In flow
-            // You'll need to import GoogleSignIn framework
-            /*
-            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: getRootViewController())
-            
+            // Read clientID from Firebase config (GoogleService-Info.plist)
+            guard let clientID = FirebaseApp.app()?.options.clientID else {
+                throw AuthError.googleSignInFailed("Missing Google clientID. Check GoogleService-Info.plist.")
+            }
+
+            // Configure Google Sign-In
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+
+            // Present Google Sign-In UI
+            let presentingVC = getRootViewController()
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingVC)
+
+            // Extract Google ID token for backend
             guard let idToken = result.user.idToken?.tokenString else {
                 throw AuthError.invalidToken
             }
-            
+
+            // Call your backend with Google ID token
             let response = try await APIClient.shared.signInWithGoogle(token: idToken)
-            */
-            
-            // Placeholder for now
-            throw AuthError.notImplemented
-            
+
+            // Persist and update app state
+            keychain.saveToken(response.token)
+            keychain.saveUserData(response.user)
+
+            self.currentUser = response.user
+            self.isAuthenticated = true
+            isLoading = false
         } catch {
             isLoading = false
             authError = .googleSignInFailed(error.localizedDescription)
@@ -487,3 +501,4 @@ extension AuthenticationManager {
         return rootViewController
     }
 }
+

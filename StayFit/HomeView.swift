@@ -75,20 +75,28 @@ struct HomeView: View {
                 Label("Log", systemImage: "figure.strengthtraining.traditional")
             }
 
-            // MARK: Routines tab
-            NavigationStack {
-                RoutinesView()
-            }
-            .tabItem {
-                Label("Routines", systemImage: "list.bullet.rectangle")
-            }
-
             // MARK: History tab
             NavigationStack {
                 HistoryView()
             }
             .tabItem {
                 Label("History", systemImage: "clock.arrow.circlepath")
+            }
+
+            // MARK: AI tab
+            NavigationStack {
+                AIWorkoutPlanView()
+            }
+            .tabItem {
+                Label("AI", systemImage: "sparkles")
+            }
+
+            // MARK: Routines tab
+            NavigationStack {
+                RoutinesView()
+            }
+            .tabItem {
+                Label("Routines", systemImage: "list.bullet.rectangle")
             }
 
             // MARK: Settings tab
@@ -99,6 +107,7 @@ struct HomeView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         }
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - Helpers
