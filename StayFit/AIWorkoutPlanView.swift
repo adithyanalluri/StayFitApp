@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import FoundationModels
 
 enum WorkoutLocation: String, CaseIterable, Identifiable {
@@ -26,8 +27,15 @@ struct AIWorkoutPlanView: View {
     @State private var dayPlans: [[ExerciseLog]] = []
 
     // Replacement sheet context
-    @State private var replacementIndex: Int? = nil
+    @State private var replacementTarget: ReplacementTarget? = nil
     @State private var showingReplacementSheet = false
+    @State private var showSavedHUD = false
+
+    // Target for replacement action
+    private enum ReplacementTarget {
+        case single(index: Int)
+        case multi(day: Int, index: Int)
+    }
 
     var body: some View {
         NavigationStack {
@@ -41,6 +49,25 @@ struct AIWorkoutPlanView: View {
             .navigationTitle("AI Workout Plan")
             .navigationBarTitleDisplayMode(.inline)
             .background(Color(.systemGroupedBackground))
+            .overlay(alignment: .top) {
+                if showSavedHUD {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.white)
+                        Text("Saved to Routines")
+                            .foregroundStyle(.white)
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(Color.green.opacity(0.95))
+                    )
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showSavedHUD)
+                }
+            }
         }
     }
 
@@ -116,12 +143,14 @@ struct AIWorkoutPlanView: View {
                         ForEach(logs.indices, id: \.self) { idx in
                             HStack {
                                 Text(logs[idx].exercise.name)
-                                Spacer()
-                                Button("Need a replacement?") {
-                                    replacementIndex = idx
+                                Spacer(minLength: 0)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button("Replace") {
+                                    replacementTarget = .multi(day: i, index: idx)
                                     showingReplacementSheet = true
                                 }
-                                .buttonStyle(.bordered)
+                                .tint(.blue)
                             }
                         }
                     }
@@ -131,12 +160,14 @@ struct AIWorkoutPlanView: View {
                     ForEach(workout.exercises.indices, id: \.self) { idx in
                         HStack {
                             Text(workout.exercises[idx].exercise.name)
-                            Spacer()
-                            Button("Need a replacement?") {
-                                replacementIndex = idx
+                            Spacer(minLength: 0)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button("Replace") {
+                                replacementTarget = .single(index: idx)
                                 showingReplacementSheet = true
                             }
-                            .buttonStyle(.bordered)
+                            .tint(.blue)
                         }
                     }
                 }
@@ -162,14 +193,16 @@ struct AIWorkoutPlanView: View {
             }
         }
         .sheet(isPresented: $showingReplacementSheet) {
-            if let idx = replacementIndex, !generatedDays.isEmpty {
-                // Replacement for multi-day plan: find day containing index - ambiguous, so fallback to first day
-                if let firstDayLogs = dayPlans.first, firstDayLogs.indices.contains(idx) {
+            switch replacementTarget {
+            case .multi(let day, let idx):
+                if dayPlans.indices.contains(day), dayPlans[day].indices.contains(idx) {
+                    let originalLog = dayPlans[day][idx]
                     ReplacementSheet(
-                        original: firstDayLogs[idx],
+                        original: originalLog,
                         location: location
                     ) { newLog in
-                        replaceExercise(at: idx, with: newLog)
+                        replaceExercise(target: .multi(day: day, index: idx), with: newLog)
+                        showingReplacementSheet = false
                     }
                 } else {
                     NavigationStack {
@@ -183,14 +216,28 @@ struct AIWorkoutPlanView: View {
                         .navigationBarTitleDisplayMode(.inline)
                     }
                 }
-            } else if let idx = replacementIndex, let workout = generatedWorkout, workout.exercises.indices.contains(idx) {
-                ReplacementSheet(
-                    original: workout.exercises[idx],
-                    location: location
-                ) { newLog in
-                    replaceExercise(at: idx, with: newLog)
+            case .single(let idx):
+                if let workout = generatedWorkout, workout.exercises.indices.contains(idx) {
+                    ReplacementSheet(
+                        original: workout.exercises[idx],
+                        location: location
+                    ) { newLog in
+                        replaceExercise(target: .single(index: idx), with: newLog)
+                        showingReplacementSheet = false
+                    }
+                } else {
+                    NavigationStack {
+                        VStack(spacing: 16) {
+                            Text("No exercise selected.")
+                                .font(.headline)
+                            Button("Dismiss") { showingReplacementSheet = false }
+                        }
+                        .padding()
+                        .navigationTitle("Pick a Replacement")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
                 }
-            } else {
+            case .none:
                 NavigationStack {
                     VStack(spacing: 16) {
                         Text("No exercise selected.")
@@ -253,24 +300,12 @@ struct AIWorkoutPlanView: View {
         }
     }
 
-    private func replaceExercise(at index: Int, with newLog: ExerciseLog) {
-        if !generatedDays.isEmpty {
-            // Attempt to find which day contains index, fallback to first day
-            for dayIndex in dayPlans.indices {
-                if dayPlans[dayIndex].indices.contains(index) {
-                    var dayLogs = dayPlans[dayIndex]
-                    dayLogs[index] = newLog
-                    dayPlans[dayIndex] = dayLogs
-                    return
-                }
-            }
-            // If not found, fallback to first day index replace if possible
-            if !dayPlans.isEmpty && dayPlans[0].indices.contains(index) {
-                var dayLogs = dayPlans[0]
-                dayLogs[index] = newLog
-                dayPlans[0] = dayLogs
-            }
-        } else {
+    private func replaceExercise(target: ReplacementTarget, with newLog: ExerciseLog) {
+        switch target {
+        case .multi(let day, let index):
+            guard dayPlans.indices.contains(day), dayPlans[day].indices.contains(index) else { return }
+            dayPlans[day][index] = newLog
+        case .single(let index):
             guard var plan = generatedWorkout, plan.exercises.indices.contains(index) else { return }
             plan.exercises[index] = newLog
             generatedWorkout = plan
@@ -291,6 +326,14 @@ struct AIWorkoutPlanView: View {
             let templates = workout.exercises.map { ExerciseTemplate(name: $0.exercise.name) }
             let template = WorkoutTemplate(name: routineName.isEmpty ? "AI Routine" : routineName, exercises: templates)
             store.saveTemplate(template)
+        }
+
+        // Success haptic + toast HUD
+        let gen = UINotificationFeedbackGenerator()
+        gen.notificationOccurred(.success)
+        withAnimation { showSavedHUD = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            withAnimation { showSavedHUD = false }
         }
     }
 
