@@ -35,27 +35,29 @@ struct RoutinesView: View {
                                 }
                                 .padding(.bottom, 6)
 
-                                HStack(spacing: 8) {
-                                    Button {
-                                        let copy = WorkoutTemplate(name: t.name + " Copy", exercises: t.exercises)
-                                        store.saveTemplate(copy)
-                                    } label: {
-                                        Label("Duplicate", systemImage: "plus.square.on.square")
-                                    }
-                                    .buttonStyle(.bordered)
-
+                                HStack {
                                     Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.secondary)
+                                    Menu {
+                                        Button {
+                                            let copy = WorkoutTemplate(name: t.name + " Copy", exercises: t.exercises)
+                                            store.saveTemplate(copy)
+                                        } label: {
+                                            Label("Duplicate", systemImage: "plus.square.on.square")
+                                        }
+                                        Button(role: .destructive) { delete(template: t) } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 32, height: 32)
+                                            .background(Circle().fill(Color(.systemGray5)))
+                                    }
                                 }
                             }
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) { delete(template: t) } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
                     }
                 }
                 .padding()
